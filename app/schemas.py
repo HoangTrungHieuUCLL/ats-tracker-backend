@@ -47,6 +47,7 @@ class JobListItem(BaseModel):
     application_status: ApplicationStatus
     processing_status: ProcessingStatus
     processing_error: str | None
+    next_attempt_at: datetime | None
     application_deadline: date | None
     created_at: datetime
 
