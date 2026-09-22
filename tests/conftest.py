@@ -6,7 +6,10 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
+from app.auth import create_access_token
+from app.db import engine
 from app.main import app
 
 
@@ -15,3 +18,19 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+def auth_headers():
+    return {"Authorization": f"Bearer {create_access_token()}"}
+
+
+@pytest.fixture
+async def clean_jobs_table():
+    async def _truncate():
+        async with engine.begin() as conn:
+            await conn.execute(text("TRUNCATE TABLE jobs CASCADE"))
+
+    await _truncate()
+    yield
+    await _truncate()

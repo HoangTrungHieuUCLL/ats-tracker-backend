@@ -1,10 +1,25 @@
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, health
+from app.routers import auth, health, jobs
+from app.worker import worker_loop
 
-app = FastAPI(title="ATS Keyword Tracker")
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    task = asyncio.create_task(worker_loop())
+    yield
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+app = FastAPI(title="ATS Keyword Tracker", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,3 +31,4 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(jobs.router)
