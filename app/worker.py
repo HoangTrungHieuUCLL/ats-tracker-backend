@@ -268,6 +268,15 @@ async def process_job(job_id: uuid.UUID) -> None:
             return
         domain = job.domain
         source_url = job.source_url
+        # A job requeued via manual-text or reanalyze already has raw_text
+        # from a previous pass (or from a pasted-text submission) — skip
+        # straight to the LLM step instead of refetching the URL.
+        skip_to_analysis = job.extraction_method is not None and job.raw_text is not None
+
+    if skip_to_analysis:
+        await _set_status(job_id, ProcessingStatus.analyzing)
+        await _run_llm_analysis(job_id)
+        return
 
     html: str | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):

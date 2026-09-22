@@ -34,11 +34,22 @@ def reset_quota_state():
     quota_state._daily_quota_resume_at = None
 
 
+_SEEDED_KEYWORD_KEYS = ["power bi", "excel", "gcp", "aws", "kubernetes", "postgresql"]
+
+
 @pytest.fixture
 async def clean_jobs_table():
     async def _truncate():
         async with engine.begin() as conn:
             await conn.execute(text("TRUNCATE TABLE jobs CASCADE"))
+            # Keywords/aliases created by tests (not part of the migration
+            # seed) don't cascade from a jobs truncate, so sweep them too —
+            # otherwise unique canonical_key/alias_key values collide across
+            # test runs against the same persistent test database.
+            await conn.execute(
+                text("DELETE FROM keywords WHERE canonical_key != ALL(:seed)"),
+                {"seed": _SEEDED_KEYWORD_KEYS},
+            )
 
     await _truncate()
     yield
