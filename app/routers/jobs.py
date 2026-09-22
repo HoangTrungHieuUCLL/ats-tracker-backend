@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth import require_auth
+from app.auth import get_current_user_id
 from app.db import get_db
 from app.models import (
     ApplicationStatus,
@@ -35,7 +35,7 @@ from app.services.extraction.quality_gate import passes_quality_gate
 from app.services.llm.prompt import PROMPT_VERSION
 from app.services.url_normalize import normalize_url
 
-router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 _METADATA_UPDATE_FIELDS = {
     "company_name",
@@ -57,7 +57,9 @@ _SORT_COLUMNS = {
 
 @router.post("/batch", response_model=list[BatchResultItem])
 async def batch_intake(
-    body: BatchRequest, db: AsyncSession = Depends(get_db)
+    body: BatchRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> list[BatchResultItem]:
     results = []
     for raw_url in body.urls:
@@ -70,13 +72,16 @@ async def batch_intake(
         normalized_url, domain = normalized
 
         existing = (
-            await db.execute(select(Job).where(Job.normalized_url == normalized_url))
+            await db.execute(
+                select(Job).where(Job.user_id == user_id, Job.normalized_url == normalized_url)
+            )
         ).scalar_one_or_none()
         if existing:
             results.append(BatchResultItem(url=raw_url, result="duplicate", job_id=existing.id))
             continue
 
         job = Job(
+            user_id=user_id,
             source_url=raw_url,
             normalized_url=normalized_url,
             domain=domain,
@@ -93,6 +98,7 @@ async def batch_intake(
 @router.get("", response_model=JobListResponse)
 async def list_jobs(
     db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     processing_status: ProcessingStatus | None = None,
     application_status: ApplicationStatus | None = None,
     role_family: RoleFamily | None = None,
@@ -104,7 +110,7 @@ async def list_jobs(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> JobListResponse:
-    filters = []
+    filters = [Job.user_id == user_id]
     if processing_status is not None:
         filters.append(Job.processing_status == processing_status)
     if application_status is not None:
@@ -135,9 +141,9 @@ async def list_jobs(
 
 
 async def _get_job_or_404(
-    db: AsyncSession, job_id: uuid.UUID, *, with_relations: bool = False
+    db: AsyncSession, job_id: uuid.UUID, user_id: uuid.UUID, *, with_relations: bool = False
 ) -> Job:
-    stmt = select(Job).where(Job.id == job_id)
+    stmt = select(Job).where(Job.id == job_id, Job.user_id == user_id)
     if with_relations:
         stmt = stmt.options(
             selectinload(Job.notes),
@@ -167,16 +173,23 @@ def _to_job_detail(job: Job) -> JobDetail:
 
 
 @router.get("/{job_id}", response_model=JobDetail)
-async def get_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> JobDetail:
-    job = await _get_job_or_404(db, job_id, with_relations=True)
+async def get_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> JobDetail:
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
     return _to_job_detail(job)
 
 
 @router.patch("/{job_id}", response_model=JobDetail)
 async def update_job(
-    job_id: uuid.UUID, body: JobUpdate, db: AsyncSession = Depends(get_db)
+    job_id: uuid.UUID,
+    body: JobUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> JobDetail:
-    job = await _get_job_or_404(db, job_id, with_relations=True)
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
     updates = body.model_dump(exclude_unset=True)
 
     if "application_status" in updates or "interview_round" in updates:
@@ -202,22 +215,29 @@ async def update_job(
     job.manually_edited_fields = sorted(edited)
 
     await db.commit()
-    job = await _get_job_or_404(db, job_id, with_relations=True)
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
     return _to_job_detail(job)
 
 
 @router.delete("/{job_id}", status_code=204)
-async def delete_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
-    job = await _get_job_or_404(db, job_id)
+async def delete_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> None:
+    job = await _get_job_or_404(db, job_id, user_id)
     await db.delete(job)
     await db.commit()
 
 
 @router.put("/{job_id}/manual-text", response_model=JobDetail)
 async def submit_manual_text(
-    job_id: uuid.UUID, body: ManualTextRequest, db: AsyncSession = Depends(get_db)
+    job_id: uuid.UUID,
+    body: ManualTextRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> JobDetail:
-    job = await _get_job_or_404(db, job_id)
+    job = await _get_job_or_404(db, job_id, user_id)
     if not passes_quality_gate(body.text):
         raise HTTPException(
             status_code=422, detail="Text is too short (minimum 150 words) to analyze."
@@ -230,13 +250,17 @@ async def submit_manual_text(
     job.processing_error = None
     await db.commit()
 
-    job = await _get_job_or_404(db, job_id, with_relations=True)
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
     return _to_job_detail(job)
 
 
 @router.post("/{job_id}/retry", response_model=JobDetail)
-async def retry_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> JobDetail:
-    job = await _get_job_or_404(db, job_id)
+async def retry_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> JobDetail:
+    job = await _get_job_or_404(db, job_id, user_id)
     if job.processing_status not in (ProcessingStatus.failed, ProcessingStatus.needs_manual_text):
         raise HTTPException(
             status_code=409, detail="Only 'failed' or 'needs_manual_text' jobs can be retried."
@@ -250,13 +274,17 @@ async def retry_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Jo
     job.attempts = 0
     await db.commit()
 
-    job = await _get_job_or_404(db, job_id, with_relations=True)
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
     return _to_job_detail(job)
 
 
 @router.post("/{job_id}/reanalyze", response_model=JobDetail)
-async def reanalyze_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> JobDetail:
-    job = await _get_job_or_404(db, job_id)
+async def reanalyze_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> JobDetail:
+    job = await _get_job_or_404(db, job_id, user_id)
     if not job.raw_text:
         raise HTTPException(status_code=409, detail="Job has no extracted text to reanalyze.")
 
@@ -264,13 +292,17 @@ async def reanalyze_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
     job.processing_error = None
     await db.commit()
 
-    job = await _get_job_or_404(db, job_id, with_relations=True)
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
     return _to_job_detail(job)
 
 
 @router.post("/reanalyze-outdated")
-async def reanalyze_outdated_jobs(db: AsyncSession = Depends(get_db)) -> dict:
+async def reanalyze_outdated_jobs(
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> dict:
     stmt = select(Job).where(
+        Job.user_id == user_id,
         Job.raw_text.isnot(None),
         Job.prompt_version.isnot(None),
         Job.prompt_version != PROMPT_VERSION,
@@ -285,9 +317,12 @@ async def reanalyze_outdated_jobs(db: AsyncSession = Depends(get_db)) -> dict:
 
 @router.post("/{job_id}/notes", response_model=JobNoteOut, status_code=201)
 async def add_note(
-    job_id: uuid.UUID, body: NoteCreate, db: AsyncSession = Depends(get_db)
+    job_id: uuid.UUID,
+    body: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> JobNote:
-    await _get_job_or_404(db, job_id)
+    await _get_job_or_404(db, job_id, user_id)
     note = JobNote(job_id=job_id, body=body.body)
     db.add(note)
     await db.commit()

@@ -4,13 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_auth
+from app.auth import get_current_user_id
 from app.db import get_db
 from app.models import Job, JobKeyword, Keyword, KeywordAlias
 from app.schemas import JobListItem, KeywordMergeRequest, KeywordUpdate
 from app.services.normalize import normalize_key
 
-router = APIRouter(prefix="/keywords", tags=["keywords"], dependencies=[Depends(require_auth)])
+router = APIRouter(
+    prefix="/keywords", tags=["keywords"], dependencies=[Depends(get_current_user_id)]
+)
 
 
 async def _get_keyword_or_404(db: AsyncSession, keyword_id: uuid.UUID) -> Keyword:
@@ -21,11 +23,15 @@ async def _get_keyword_or_404(db: AsyncSession, keyword_id: uuid.UUID) -> Keywor
 
 
 @router.get("/{keyword_id}/jobs", response_model=list[JobListItem])
-async def jobs_for_keyword(keyword_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def jobs_for_keyword(
+    keyword_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
     stmt = (
         select(Job)
         .join(JobKeyword, JobKeyword.job_id == Job.id)
-        .where(JobKeyword.keyword_id == keyword_id)
+        .where(JobKeyword.keyword_id == keyword_id, Job.user_id == user_id)
         .order_by(Job.created_at.desc())
     )
     jobs = (await db.execute(stmt)).scalars().all()

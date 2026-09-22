@@ -1,16 +1,17 @@
 import csv
 import io
+import uuid
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_auth
+from app.auth import get_current_user_id
 from app.db import get_db
 from app.models import Job
 
-router = APIRouter(tags=["export"], dependencies=[Depends(require_auth)])
+router = APIRouter(tags=["export"])
 
 _COLUMNS = [
     "id",
@@ -30,8 +31,12 @@ _COLUMNS = [
 
 
 @router.get("/export/jobs.csv")
-async def export_jobs_csv(db: AsyncSession = Depends(get_db)) -> StreamingResponse:
-    jobs = (await db.execute(select(Job).order_by(Job.created_at.desc()))).scalars().all()
+async def export_jobs_csv(
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> StreamingResponse:
+    stmt = select(Job).where(Job.user_id == user_id).order_by(Job.created_at.desc())
+    jobs = (await db.execute(stmt)).scalars().all()
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

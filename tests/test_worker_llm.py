@@ -6,6 +6,7 @@ from app.services import quota_state
 from app.services.llm.base import LLMInvalidResponseError, LLMTransientError, QuotaExceeded
 from app.services.llm.schema import JobAnalysis
 from app.worker import _run_llm_analysis
+from tests.factories import TEST_USER_ID
 
 
 class FakeClient:
@@ -25,6 +26,7 @@ class FakeClient:
 async def _insert_job() -> Job:
     async with async_session_maker() as session:
         job = Job(
+            user_id=TEST_USER_ID,
             source_url="https://example.com/jobs/1",
             normalized_url="https://example.com/jobs/1",
             domain="example.com",

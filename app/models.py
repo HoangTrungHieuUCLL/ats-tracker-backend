@@ -117,12 +117,26 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-class Job(TimestampMixin, Base):
-    __tablename__ = "jobs"
+class User(TimestampMixin, Base):
+    __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
+    username: Mapped[str] = mapped_column(Text, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+
+    jobs: Mapped[list["Job"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class Job(TimestampMixin, Base):
+    __tablename__ = "jobs"
+    __table_args__ = (UniqueConstraint("user_id", "normalized_url", name="uq_user_normalized_url"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
     source_url: Mapped[str] = mapped_column(Text)
-    normalized_url: Mapped[str] = mapped_column(Text, unique=True)
+    normalized_url: Mapped[str] = mapped_column(Text)
     domain: Mapped[str] = mapped_column(Text)
 
     processing_status: Mapped[ProcessingStatus] = _enum(
@@ -166,6 +180,7 @@ class Job(TimestampMixin, Base):
 
     manually_edited_fields: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
 
+    user: Mapped["User"] = relationship(back_populates="jobs")
     notes: Mapped[list["JobNote"]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="JobNote.created_at.desc()"
     )

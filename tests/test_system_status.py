@@ -2,6 +2,7 @@ import itertools
 
 from app.db import async_session_maker
 from app.models import Job, ProcessingStatus
+from tests.factories import TEST_USER_ID
 
 _url_counter = itertools.count()
 
@@ -11,6 +12,7 @@ async def _insert_job(status: ProcessingStatus) -> None:
         n = next(_url_counter)
         session.add(
             Job(
+                user_id=TEST_USER_ID,
                 source_url="https://example.com/jobs/1",
                 normalized_url=f"https://example.com/jobs/{status.value}-{n}",
                 domain="example.com",

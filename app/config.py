@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     database_url: str
     gemini_api_key: str = ""
     llm_model: str = "gemini-3.5-flash-lite"
-    app_password: str
     jwt_secret: str
     cors_origins: str = "http://localhost:5173"
 

@@ -8,6 +8,7 @@ from app.db import async_session_maker
 from app.models import ExtractionMethod, Job, ProcessingStatus
 from app.services.llm.schema import JobAnalysis
 from app.worker import claim_next_job, process_job, reset_stuck_jobs
+from tests.factories import TEST_USER_ID
 
 LONG_DESCRIPTION = "<p>" + " ".join(["Requirement"] * 200) + "</p>"
 
@@ -29,6 +30,7 @@ SHORT_HTML = "<html><body><p>Too short to pass the quality gate.</p></body></htm
 async def _insert_job(url: str = "https://example.com/jobs/1") -> Job:
     async with async_session_maker() as session:
         job = Job(
+            user_id=TEST_USER_ID,
             source_url=url,
             normalized_url=url,
             domain="example.com",

@@ -4,10 +4,12 @@ from app.db import async_session_maker
 from app.models import Job, JobKeyword, Keyword, KeywordCategory, ProcessingStatus
 from app.services.llm.schema import ExtractedKeyword, JobAnalysis
 from app.services.postprocess import apply_analysis
+from tests.factories import TEST_USER_ID
 
 
 async def _insert_job(**overrides) -> Job:
     defaults = dict(
+        user_id=TEST_USER_ID,
         source_url="https://example.com/jobs/1",
         normalized_url="https://example.com/jobs/1",
         domain="example.com",

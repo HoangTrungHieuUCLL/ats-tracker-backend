@@ -4,12 +4,17 @@ import uuid
 from app.db import async_session_maker
 from app.models import Job, JobKeyword, Keyword, ProcessingStatus
 
+TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+TEST_USERNAME = "testuser"
+TEST_PASSWORD = "testpassword123"
+
 _counter = itertools.count()
 
 
 async def insert_job(**overrides) -> Job:
     n = next(_counter)
     defaults = dict(
+        user_id=TEST_USER_ID,
         source_url=f"https://example.com/jobs/{n}",
         normalized_url=f"https://example.com/jobs/{n}",
         domain="example.com",

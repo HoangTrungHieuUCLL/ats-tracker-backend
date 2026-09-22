@@ -1,10 +1,11 @@
 import datetime as dt
+import uuid
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_auth
+from app.auth import get_current_user_id
 from app.db import get_db
 from app.models import (
     ApplicationStatus,
@@ -27,10 +28,11 @@ from app.schemas import (
     WeekCount,
 )
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 def _job_filters(
+    user_id: uuid.UUID,
     role_family: RoleFamily | None,
     language: Language | None,
     seniority: Seniority | None,
@@ -39,7 +41,7 @@ def _job_filters(
     date_from: dt.date | None,
     date_to: dt.date | None,
 ) -> list:
-    filters = [Job.processing_status == ProcessingStatus.done]
+    filters = [Job.user_id == user_id, Job.processing_status == ProcessingStatus.done]
     if role_family is not None:
         filters.append(Job.role_family == role_family)
     if language is not None:
@@ -60,6 +62,7 @@ def _job_filters(
 @router.get("/keywords", response_model=DashboardKeywordsResponse)
 async def dashboard_keywords(
     db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     role_family: RoleFamily | None = None,
     language: Language | None = None,
     seniority: Seniority | None = None,
@@ -73,7 +76,14 @@ async def dashboard_keywords(
     limit: int = Query(25, ge=1, le=200),
 ) -> DashboardKeywordsResponse:
     job_filters = _job_filters(
-        role_family, language, seniority, employment_type, application_status, date_from, date_to
+        user_id,
+        role_family,
+        language,
+        seniority,
+        employment_type,
+        application_status,
+        date_from,
+        date_to,
     )
 
     n_jobs = (
@@ -140,9 +150,16 @@ async def dashboard_keywords(
 
 
 @router.get("/summary", response_model=DashboardSummaryResponse)
-async def dashboard_summary(db: AsyncSession = Depends(get_db)) -> DashboardSummaryResponse:
+async def dashboard_summary(
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> DashboardSummaryResponse:
     async def _counts(column) -> dict[str, int]:
-        rows = (await db.execute(select(column, func.count()).group_by(column))).all()
+        rows = (
+            await db.execute(
+                select(column, func.count()).where(Job.user_id == user_id).group_by(column)
+            )
+        ).all()
         return {(value.value if value is not None else "unknown"): count for value, count in rows}
 
     by_application_status = await _counts(Job.application_status)
@@ -152,7 +169,12 @@ async def dashboard_summary(db: AsyncSession = Depends(get_db)) -> DashboardSumm
 
     week = func.date_trunc("week", Job.created_at)
     week_rows = (
-        await db.execute(select(week, func.count()).group_by(week).order_by(week))
+        await db.execute(
+            select(week, func.count())
+            .where(Job.user_id == user_id)
+            .group_by(week)
+            .order_by(week)
+        )
     ).all()
 
     return DashboardSummaryResponse(
