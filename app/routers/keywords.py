@@ -70,6 +70,13 @@ async def update_keyword(
     }
 
 
+@router.delete("/{keyword_id}", status_code=204)
+async def delete_keyword(keyword_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
+    keyword = await _get_keyword_or_404(db, keyword_id)
+    await db.delete(keyword)
+    await db.commit()
+
+
 @router.post("/merge")
 async def merge_keywords(body: KeywordMergeRequest, db: AsyncSession = Depends(get_db)) -> dict:
     if body.source_keyword_id == body.target_keyword_id:

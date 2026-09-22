@@ -234,7 +234,9 @@ class Keyword(Base):
     aliases: Mapped[list["KeywordAlias"]] = relationship(
         back_populates="keyword", cascade="all, delete-orphan"
     )
-    job_keywords: Mapped[list["JobKeyword"]] = relationship(back_populates="keyword")
+    job_keywords: Mapped[list["JobKeyword"]] = relationship(
+        back_populates="keyword", cascade="all, delete-orphan"
+    )
 
 
 class KeywordAlias(Base):

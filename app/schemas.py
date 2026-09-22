@@ -37,6 +37,7 @@ class JobListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    source_url: str
     company_name: str | None
     job_title: str | None
     role_family: RoleFamily | None
