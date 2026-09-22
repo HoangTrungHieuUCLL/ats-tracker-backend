@@ -6,6 +6,7 @@ import respx
 
 from app.db import async_session_maker
 from app.models import ExtractionMethod, Job, ProcessingStatus
+from app.services.llm.schema import JobAnalysis
 from app.worker import claim_next_job, process_job, reset_stuck_jobs
 
 LONG_DESCRIPTION = "<p>" + " ".join(["Requirement"] * 200) + "</p>"
@@ -44,18 +45,27 @@ async def _reload(job_id) -> Job:
         return await session.get(Job, job_id)
 
 
+class _FakeLLMClient:
+    model = "fake-model"
+
+    async def analyze(self, job_text, hints):
+        return JobAnalysis(job_title="Data Analyst", keywords=[])
+
+
 @pytest.mark.asyncio
 @respx.mock
-async def test_process_job_success_via_json_ld(clean_jobs_table):
+async def test_process_job_success_via_json_ld(clean_jobs_table, monkeypatch):
+    monkeypatch.setattr("app.worker._get_llm_client", lambda: _FakeLLMClient())
     job = await _insert_job()
     respx.get(job.source_url).mock(return_value=httpx.Response(200, text=JOB_POSTING_HTML))
 
     await process_job(job.id)
 
     updated = await _reload(job.id)
-    assert updated.processing_status == ProcessingStatus.analyzing
+    assert updated.processing_status == ProcessingStatus.done
     assert updated.extraction_method == ExtractionMethod.json_ld
     assert "Requirement" in updated.raw_text
+    assert updated.job_title == "Data Analyst"
 
 
 @pytest.mark.asyncio

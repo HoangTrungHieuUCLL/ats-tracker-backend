@@ -16,6 +16,10 @@ from app.services.extraction.json_ld import extract_json_ld_job_posting
 from app.services.extraction.quality_gate import clean_text, passes_quality_gate
 from app.services.extraction.readability import extract_main_content
 from app.services.fetch import FetchBlocked, FetchTooLarge, FetchTransientError, fetch_page
+from app.services.llm.base import LLMInvalidResponseError, LLMTransientError, QuotaExceeded
+from app.services.llm.gemini_client import GeminiClient
+from app.services.postprocess import apply_analysis
+from app.services.quota_state import get_daily_quota_pause, set_daily_quota_exhausted
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,9 @@ POLL_INTERVAL_SECONDS = 5
 MAX_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = [10, 30, 90]
 STUCK_RESET_MINUTES = 10
+
+LLM_MAX_ATTEMPTS = 3
+LLM_PER_MINUTE_BACKOFF_SECONDS = [15, 30, 60]
 
 
 class DomainRateLimiter:
@@ -40,7 +47,34 @@ class DomainRateLimiter:
         self._last_request_at[domain] = time.monotonic()
 
 
+class MinIntervalLimiter:
+    """Like DomainRateLimiter, but a single global interval (used for the LLM)."""
+
+    def __init__(self, min_seconds: float):
+        self.min_seconds = min_seconds
+        self._last_at: float | None = None
+
+    async def wait(self) -> None:
+        now = time.monotonic()
+        if self._last_at is not None:
+            remaining = self.min_seconds - (now - self._last_at)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+        self._last_at = time.monotonic()
+
+
 _limiter = DomainRateLimiter(settings.fetch_min_seconds_per_domain)
+_llm_limiter = MinIntervalLimiter(settings.llm_min_seconds_between_calls)
+_llm_client: GeminiClient | None = None
+
+
+def _get_llm_client() -> GeminiClient | None:
+    global _llm_client
+    if not settings.gemini_api_key:
+        return None
+    if _llm_client is None:
+        _llm_client = GeminiClient(api_key=settings.gemini_api_key, model=settings.llm_model)
+    return _llm_client
 
 
 async def reset_stuck_jobs() -> None:
@@ -117,6 +151,16 @@ async def _mark_failed(job_id: uuid.UUID, reason: str) -> None:
             await session.commit()
 
 
+async def _set_quota_wait(job_id: uuid.UUID, resume_at) -> None:
+    async with async_session_maker() as session:
+        job = await session.get(Job, job_id)
+        if job is not None:
+            job.processing_status = ProcessingStatus.quota_wait
+            job.next_attempt_at = resume_at
+            job.processing_error = "Gemini daily quota reached."
+            await session.commit()
+
+
 async def _bump_attempts(job_id: uuid.UUID) -> None:
     async with async_session_maker() as session:
         job = await session.get(Job, job_id)
@@ -154,6 +198,67 @@ async def _run_extraction_ladder(html: str, url: str):
         return cleaned, ExtractionMethod.readability, hints, _truncation_warning(truncated)
 
     return None
+
+
+async def _call_llm_with_validation(client: GeminiClient, raw_text: str, hints):
+    """Retry once on schema-validation failure (section 7.5.1), then propagate."""
+    last_exc: LLMInvalidResponseError | None = None
+    for _ in range(2):
+        try:
+            return await client.analyze(raw_text, hints)
+        except LLMInvalidResponseError as exc:
+            last_exc = exc
+    raise last_exc
+
+
+async def _run_llm_analysis(job_id: uuid.UUID) -> None:
+    pause_until = get_daily_quota_pause()
+    if pause_until is not None:
+        await _set_quota_wait(job_id, pause_until)
+        return
+
+    client = _get_llm_client()
+    if client is None:
+        await _mark_failed(job_id, "GEMINI_API_KEY is not configured")
+        return
+
+    async with async_session_maker() as session:
+        job = await session.get(Job, job_id)
+        if job is None:
+            return
+        raw_text = job.raw_text
+        hints = job.json_ld_hints
+
+    analysis = None
+    for attempt in range(1, LLM_MAX_ATTEMPTS + 1):
+        await _llm_limiter.wait()
+        try:
+            analysis = await _call_llm_with_validation(client, raw_text, hints)
+            break
+        except QuotaExceeded as exc:
+            if exc.is_daily or attempt >= LLM_MAX_ATTEMPTS:
+                resume_at = set_daily_quota_exhausted()
+                await _set_quota_wait(job_id, resume_at)
+                return
+            await asyncio.sleep(LLM_PER_MINUTE_BACKOFF_SECONDS[attempt - 1])
+        except LLMTransientError as exc:
+            if attempt >= LLM_MAX_ATTEMPTS:
+                reason = f"LLM call failed after {LLM_MAX_ATTEMPTS} attempts: {exc}"
+                await _mark_failed(job_id, reason)
+                return
+            await asyncio.sleep(RETRY_BACKOFF_SECONDS[attempt - 1])
+        except LLMInvalidResponseError as exc:
+            await _mark_failed(job_id, f"LLM response failed validation: {exc}")
+            return
+
+    if analysis is None:
+        return
+
+    async with async_session_maker() as session:
+        job = await session.get(Job, job_id)
+        if job is None:
+            return
+        await apply_analysis(session, job, analysis, client.model)
 
 
 async def process_job(job_id: uuid.UUID) -> None:
@@ -204,10 +309,10 @@ async def process_job(job_id: uuid.UUID) -> None:
         job.extraction_method = method
         job.json_ld_hints = hints
         job.processing_error = warning
-        # Ready for analysis. Phase 3 wires the Gemini call in here; for now
-        # the job simply waits in this state.
         job.processing_status = ProcessingStatus.analyzing
         await session.commit()
+
+    await _run_llm_analysis(job_id)
 
 
 async def worker_loop() -> None:

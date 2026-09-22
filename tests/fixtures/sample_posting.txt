@@ -1,0 +1,23 @@
+Data Analyst (Working Student) - Munich, Germany
+
+Acme Analytics GmbH is looking for a motivated Working Student Data Analyst
+to join our growing analytics team in Munich.
+
+Your profile:
+- You are currently enrolled at a university in a quantitative field.
+- Strong SQL skills are required.
+- Experience with Python (pandas) is required.
+- Familiarity with Power BI is required.
+- Fluent German (C1) and English are required.
+
+Nice to have:
+- Experience with dbt is a plus.
+- Knowledge of AWS is ideally present, but not required.
+
+What you'll do:
+- Build and maintain dashboards in Power BI.
+- Write SQL queries against our data warehouse.
+- Support the team with ad-hoc analyses in Python.
+
+We offer flexible working hours, a modern office in central Munich, and a
+JobRad bike leasing program.

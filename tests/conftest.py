@@ -25,6 +25,15 @@ def auth_headers():
     return {"Authorization": f"Bearer {create_access_token()}"}
 
 
+@pytest.fixture(autouse=True)
+def reset_quota_state():
+    from app.services import quota_state
+
+    quota_state._daily_quota_resume_at = None
+    yield
+    quota_state._daily_quota_resume_at = None
+
+
 @pytest.fixture
 async def clean_jobs_table():
     async def _truncate():
