@@ -1,0 +1,10 @@
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.25.0
+respx==0.22.0
+ruff==0.8.4
+
+# Pin transitively (pulled in by google-genai's deps): the latest
+# `cryptography` release has no prebuilt macOS x86_64 wheel yet, which makes
+# local installs try to compile it from source. This version has wheels.
+cryptography==43.0.3

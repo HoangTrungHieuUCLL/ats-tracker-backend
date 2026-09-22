@@ -1,0 +1,32 @@
+[
+  {
+    "canonical_name": "Power BI",
+    "category": "tool",
+    "aliases": ["powerbi", "ms power bi", "microsoft power bi"]
+  },
+  {
+    "canonical_name": "Excel",
+    "category": "tool",
+    "aliases": ["ms excel", "microsoft excel"]
+  },
+  {
+    "canonical_name": "GCP",
+    "category": "tool",
+    "aliases": ["google cloud platform"]
+  },
+  {
+    "canonical_name": "AWS",
+    "category": "tool",
+    "aliases": ["amazon web services"]
+  },
+  {
+    "canonical_name": "Kubernetes",
+    "category": "tool",
+    "aliases": ["k8s"]
+  },
+  {
+    "canonical_name": "PostgreSQL",
+    "category": "tool",
+    "aliases": ["postgres"]
+  }
+]
