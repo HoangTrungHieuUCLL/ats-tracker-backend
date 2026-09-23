@@ -39,3 +39,19 @@ def test_clean_text_truncates_at_20000_chars():
     cleaned, truncated = clean_text(raw)
     assert len(cleaned) == 20_000
     assert truncated is True
+
+
+def test_clean_text_strips_trailing_linkedin_boilerplate():
+    raw = (
+        "Job Title\n\nWhat you'll do:\n- Ship things\n\n"
+        "Ähnliche Jobs\nOther Job Title\nAnother Co."
+    )
+    cleaned, truncated = clean_text(raw)
+    assert cleaned == "Job Title\n\nWhat you'll do:\n- Ship things"
+    assert truncated is False
+
+
+def test_clean_text_leaves_text_without_boilerplate_untouched():
+    raw = "Job Title\n\nWhat you'll do:\n- Ship things"
+    cleaned, truncated = clean_text(raw)
+    assert cleaned == raw
