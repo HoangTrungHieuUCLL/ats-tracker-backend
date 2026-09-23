@@ -198,3 +198,5 @@ class DashboardSummaryResponse(BaseModel):
     by_language: dict[str, int]
     by_employment_type: dict[str, int]
     jobs_per_week: list[WeekCount]
+    applications_per_week: list[WeekCount]
+    missed_deadline_count: int

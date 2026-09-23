@@ -13,6 +13,7 @@ from app.models import (
     Importance,
     Job,
     JobKeyword,
+    JobStatusHistory,
     Keyword,
     KeywordCategory,
     Language,
@@ -177,10 +178,34 @@ async def dashboard_summary(
         )
     ).all()
 
+    applied_week = func.date_trunc("week", JobStatusHistory.changed_at)
+    applied_week_rows = (
+        await db.execute(
+            select(applied_week, func.count())
+            .join(Job, Job.id == JobStatusHistory.job_id)
+            .where(Job.user_id == user_id, JobStatusHistory.to_status == ApplicationStatus.applied)
+            .group_by(applied_week)
+            .order_by(applied_week)
+        )
+    ).all()
+
+    missed_deadline_count = (
+        await db.execute(
+            select(func.count()).where(
+                Job.user_id == user_id,
+                Job.application_status == ApplicationStatus.saved,
+                Job.application_deadline.isnot(None),
+                Job.application_deadline < dt.date.today(),
+            )
+        )
+    ).scalar_one()
+
     return DashboardSummaryResponse(
         by_application_status=by_application_status,
         by_role_family=by_role_family,
         by_language=by_language,
         by_employment_type=by_employment_type,
         jobs_per_week=[WeekCount(week=w.date(), count=c) for w, c in week_rows],
+        applications_per_week=[WeekCount(week=w.date(), count=c) for w, c in applied_week_rows],
+        missed_deadline_count=missed_deadline_count,
     )

@@ -1,3 +1,5 @@
+import datetime as dt
+
 from app.models import ProcessingStatus
 from tests.factories import insert_job, insert_job_keyword, insert_keyword
 
@@ -69,3 +71,36 @@ async def test_dashboard_summary_counts(client, auth_headers, clean_jobs_table):
     assert body["by_application_status"]["applied"] == 2
     assert body["by_application_status"]["saved"] == 1
     assert body["by_role_family"]["data_engineer"] == 2
+
+
+async def test_dashboard_summary_missed_deadline_count(client, auth_headers, clean_jobs_table):
+    await insert_job(
+        application_status="saved",
+        application_deadline=dt.date.today() - dt.timedelta(days=1),
+    )
+    await insert_job(
+        application_status="saved",
+        application_deadline=dt.date.today() + dt.timedelta(days=1),
+    )
+    await insert_job(
+        application_status="applied",
+        application_deadline=dt.date.today() - dt.timedelta(days=1),
+    )
+
+    response = await client.get("/dashboard/summary", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["missed_deadline_count"] == 1
+
+
+async def test_dashboard_summary_applications_per_week(client, auth_headers, clean_jobs_table):
+    job = await insert_job(application_status="saved")
+
+    response = await client.patch(
+        f"/jobs/{job.id}", json={"application_status": "applied"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+
+    response = await client.get("/dashboard/summary", headers=auth_headers)
+    assert response.status_code == 200
+    weeks = response.json()["applications_per_week"]
+    assert sum(w["count"] for w in weeks) == 1
