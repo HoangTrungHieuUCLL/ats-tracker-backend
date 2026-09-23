@@ -122,7 +122,7 @@ async def test_manual_text_accepts_and_requeues(client, auth_headers, clean_jobs
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["processing_status"] == "queued"
+    assert body["processing_status"] == "needs_review"
     assert body["extraction_method"] == "manual"
 
 
@@ -163,8 +163,34 @@ async def test_reanalyze_requeues_without_touching_raw_text(client, auth_headers
     response = await client.post(f"/jobs/{job.id}/reanalyze", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
-    assert body["processing_status"] == "queued"
+    assert body["processing_status"] == "needs_review"
     assert body["raw_text"] == "kept text"
+
+
+async def test_analyze_requires_needs_review(client, auth_headers, clean_jobs_table):
+    job = await insert_job(processing_status=ProcessingStatus.done)
+    response = await client.post(f"/jobs/{job.id}/analyze", headers=auth_headers)
+    assert response.status_code == 409
+
+
+async def test_analyze_requeues_job(client, auth_headers, clean_jobs_table):
+    job = await insert_job(
+        processing_status=ProcessingStatus.needs_review,
+        extraction_method=ExtractionMethod.json_ld,
+        raw_text="ready to analyze",
+    )
+    response = await client.post(f"/jobs/{job.id}/analyze", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["processing_status"] == "queued"
+    assert body["raw_text"] == "ready to analyze"
+
+
+async def test_analyze_404_for_unknown_job(client, auth_headers, clean_jobs_table):
+    import uuid
+
+    response = await client.post(f"/jobs/{uuid.uuid4()}/analyze", headers=auth_headers)
+    assert response.status_code == 404
 
 
 async def test_reanalyze_outdated_only_touches_previously_analyzed_jobs(

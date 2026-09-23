@@ -56,17 +56,41 @@ class _FakeLLMClient:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_process_job_success_via_json_ld(clean_jobs_table, monkeypatch):
-    monkeypatch.setattr("app.worker._get_llm_client", lambda: _FakeLLMClient())
+async def test_process_job_success_via_json_ld_stops_for_review(clean_jobs_table, monkeypatch):
+    def _fail_if_called():
+        raise AssertionError("LLM must not be called before review approval")
+
+    monkeypatch.setattr("app.worker._get_llm_client", _fail_if_called)
     job = await _insert_job()
     respx.get(job.source_url).mock(return_value=httpx.Response(200, text=JOB_POSTING_HTML))
 
     await process_job(job.id)
 
     updated = await _reload(job.id)
-    assert updated.processing_status == ProcessingStatus.done
+    assert updated.processing_status == ProcessingStatus.needs_review
     assert updated.extraction_method == ExtractionMethod.json_ld
     assert "Requirement" in updated.raw_text
+    assert updated.job_title is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_process_job_skips_refetch_and_analyzes_after_review_approval(
+    clean_jobs_table, monkeypatch
+):
+    monkeypatch.setattr("app.worker._get_llm_client", lambda: _FakeLLMClient())
+    job = await _insert_job()
+    async with async_session_maker() as session:
+        db_job = await session.get(Job, job.id)
+        db_job.processing_status = ProcessingStatus.queued
+        db_job.extraction_method = ExtractionMethod.json_ld
+        db_job.raw_text = "Already extracted text, approved for analysis."
+        await session.commit()
+
+    await process_job(job.id)
+
+    updated = await _reload(job.id)
+    assert updated.processing_status == ProcessingStatus.done
     assert updated.job_title == "Data Analyst"
 
 

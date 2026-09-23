@@ -246,7 +246,7 @@ async def submit_manual_text(
     job.raw_text = body.text
     job.raw_text_chars = len(body.text)
     job.extraction_method = ExtractionMethod.manual
-    job.processing_status = ProcessingStatus.queued
+    job.processing_status = ProcessingStatus.needs_review
     job.processing_error = None
     await db.commit()
 
@@ -287,6 +287,24 @@ async def reanalyze_job(
     job = await _get_job_or_404(db, job_id, user_id)
     if not job.raw_text:
         raise HTTPException(status_code=409, detail="Job has no extracted text to reanalyze.")
+
+    job.processing_status = ProcessingStatus.needs_review
+    job.processing_error = None
+    await db.commit()
+
+    job = await _get_job_or_404(db, job_id, user_id, with_relations=True)
+    return _to_job_detail(job)
+
+
+@router.post("/{job_id}/analyze", response_model=JobDetail)
+async def analyze_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> JobDetail:
+    job = await _get_job_or_404(db, job_id, user_id)
+    if job.processing_status != ProcessingStatus.needs_review:
+        raise HTTPException(status_code=409, detail="Job is not awaiting review.")
 
     job.processing_status = ProcessingStatus.queued
     job.processing_error = None

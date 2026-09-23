@@ -24,6 +24,7 @@ class ProcessingStatus(str, enum.Enum):
     extracting = "extracting"
     analyzing = "analyzing"
     done = "done"
+    needs_review = "needs_review"
     needs_manual_text = "needs_manual_text"
     quota_wait = "quota_wait"
     failed = "failed"
