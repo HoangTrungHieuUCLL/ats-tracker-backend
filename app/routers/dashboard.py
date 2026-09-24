@@ -71,7 +71,6 @@ async def dashboard_keywords(
     application_status: ApplicationStatus | None = None,
     importance: Importance | None = None,
     category: KeywordCategory | None = None,
-    include_unverified: bool = False,
     date_from: dt.date | None = None,
     date_to: dt.date | None = None,
     limit: int = Query(25, ge=1, le=200),
@@ -96,8 +95,6 @@ async def dashboard_keywords(
         kw_filters.append(JobKeyword.importance == importance)
     if category is not None:
         kw_filters.append(Keyword.category == category)
-    if not include_unverified:
-        kw_filters.append(JobKeyword.evidence_found.is_(True))
 
     agg_stmt = (
         select(

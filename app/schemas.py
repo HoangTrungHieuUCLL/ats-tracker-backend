@@ -46,6 +46,7 @@ class JobListItem(BaseModel):
     language: Language | None
     location: str | None
     application_status: ApplicationStatus
+    priority: int | None
     processing_status: ProcessingStatus
     processing_error: str | None
     next_attempt_at: datetime | None
@@ -112,6 +113,7 @@ class JobDetail(BaseModel):
     posted_date: date | None
     summary: str | None
     application_status: ApplicationStatus
+    priority: int | None
     interview_round: int | None
     manually_edited_fields: list[str]
     llm_model: str | None
@@ -126,6 +128,7 @@ class JobDetail(BaseModel):
 
 class JobUpdate(BaseModel):
     application_status: ApplicationStatus | None = None
+    priority: int | None = Field(default=None, ge=1, le=5)
     interview_round: int | None = None
     company_name: str | None = None
     job_title: str | None = None

@@ -4,7 +4,7 @@ from app.models import ProcessingStatus
 from tests.factories import insert_job, insert_job_keyword, insert_keyword
 
 
-async def test_dashboard_keywords_share_and_evidence_filter(client, auth_headers, clean_jobs_table):
+async def test_dashboard_keywords_share_includes_unverified(client, auth_headers, clean_jobs_table):
     job1 = await insert_job(processing_status=ProcessingStatus.done, role_family="data_analyst")
     job2 = await insert_job(processing_status=ProcessingStatus.done, role_family="data_analyst")
     await insert_job(processing_status=ProcessingStatus.queued, role_family="data_analyst")
@@ -40,15 +40,7 @@ async def test_dashboard_keywords_share_and_evidence_filter(client, auth_headers
     assert by_name["DashboardSQL"]["share"] == 1.0
     assert by_name["DashboardSQL"]["must_have_count"] == 1
     assert by_name["DashboardSQL"]["nice_to_have_count"] == 1
-    assert "DashboardPython" not in by_name  # unverified, excluded by default
-
-    response = await client.get(
-        "/dashboard/keywords",
-        params={"role_family": "data_analyst", "include_unverified": True},
-        headers=auth_headers,
-    )
-    by_name = {item["canonical_name"]: item for item in response.json()["items"]}
-    assert by_name["DashboardPython"]["job_count"] == 1
+    assert by_name["DashboardPython"]["job_count"] == 1  # unverified, included by default
     assert by_name["DashboardPython"]["share"] == 0.5
 
 

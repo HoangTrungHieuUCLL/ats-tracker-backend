@@ -174,6 +174,7 @@ class Job(TimestampMixin, Base):
         ApplicationStatus, "application_status", default=ApplicationStatus.saved
     )
     interview_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     llm_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(Text, nullable=True)

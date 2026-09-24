@@ -51,6 +51,8 @@ _METADATA_UPDATE_FIELDS = {
 _SORT_COLUMNS = {
     "created_at": Job.created_at,
     "company_name": Job.company_name,
+    "job_title": Job.job_title,
+    "priority": Job.priority,
     "application_deadline": Job.application_deadline,
 }
 
@@ -105,7 +107,10 @@ async def list_jobs(
     employment_type: EmploymentType | None = None,
     language: Language | None = None,
     q: str | None = None,
-    sort_by: str = Query("created_at", pattern="^(created_at|company_name|application_deadline)$"),
+    sort_by: str = Query(
+        "created_at",
+        pattern="^(created_at|company_name|job_title|priority|application_deadline)$",
+    ),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -206,6 +211,9 @@ async def update_job(
             )
         job.application_status = new_status
         job.interview_round = new_round
+
+    if "priority" in updates:
+        job.priority = updates["priority"]
 
     edited = set(job.manually_edited_fields or [])
     for field in _METADATA_UPDATE_FIELDS:
