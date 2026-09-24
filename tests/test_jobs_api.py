@@ -122,7 +122,7 @@ async def test_manual_text_accepts_and_requeues(client, auth_headers, clean_jobs
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["processing_status"] == "needs_review"
+    assert body["processing_status"] == "queued"
     assert body["extraction_method"] == "manual"
 
 
@@ -163,7 +163,7 @@ async def test_reanalyze_requeues_without_touching_raw_text(client, auth_headers
     response = await client.post(f"/jobs/{job.id}/reanalyze", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
-    assert body["processing_status"] == "needs_review"
+    assert body["processing_status"] == "queued"
     assert body["raw_text"] == "kept text"
 
 

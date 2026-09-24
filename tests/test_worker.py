@@ -56,26 +56,23 @@ class _FakeLLMClient:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_process_job_success_via_json_ld_stops_for_review(clean_jobs_table, monkeypatch):
-    def _fail_if_called():
-        raise AssertionError("LLM must not be called before review approval")
-
-    monkeypatch.setattr("app.worker._get_llm_client", _fail_if_called)
+async def test_process_job_success_via_json_ld_analyzes_immediately(clean_jobs_table, monkeypatch):
+    monkeypatch.setattr("app.worker._get_llm_client", lambda: _FakeLLMClient())
     job = await _insert_job()
     respx.get(job.source_url).mock(return_value=httpx.Response(200, text=JOB_POSTING_HTML))
 
     await process_job(job.id)
 
     updated = await _reload(job.id)
-    assert updated.processing_status == ProcessingStatus.needs_review
+    assert updated.processing_status == ProcessingStatus.done
     assert updated.extraction_method == ExtractionMethod.json_ld
     assert "Requirement" in updated.raw_text
-    assert updated.job_title is None
+    assert updated.job_title == "Data Analyst"
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_process_job_skips_refetch_and_analyzes_after_review_approval(
+async def test_process_job_skips_refetch_and_analyzes_when_raw_text_already_present(
     clean_jobs_table, monkeypatch
 ):
     monkeypatch.setattr("app.worker._get_llm_client", lambda: _FakeLLMClient())

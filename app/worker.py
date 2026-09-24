@@ -318,8 +318,10 @@ async def process_job(job_id: uuid.UUID) -> None:
         job.extraction_method = method
         job.json_ld_hints = hints
         job.processing_error = warning
-        job.processing_status = ProcessingStatus.needs_review
+        job.processing_status = ProcessingStatus.analyzing
         await session.commit()
+
+    await _run_llm_analysis(job_id)
 
 
 async def worker_loop() -> None:

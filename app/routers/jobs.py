@@ -254,7 +254,7 @@ async def submit_manual_text(
     job.raw_text = body.text
     job.raw_text_chars = len(body.text)
     job.extraction_method = ExtractionMethod.manual
-    job.processing_status = ProcessingStatus.needs_review
+    job.processing_status = ProcessingStatus.queued
     job.processing_error = None
     await db.commit()
 
@@ -296,7 +296,7 @@ async def reanalyze_job(
     if not job.raw_text:
         raise HTTPException(status_code=409, detail="Job has no extracted text to reanalyze.")
 
-    job.processing_status = ProcessingStatus.needs_review
+    job.processing_status = ProcessingStatus.queued
     job.processing_error = None
     await db.commit()
 
